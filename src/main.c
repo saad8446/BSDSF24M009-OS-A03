@@ -4,7 +4,7 @@ int main() {
     char* cmdline;
     char** arglist;
 
-    while ((cmdline = read_cmd(PROMPT, stdin)) != NULL) {
+    while ((cmdline = readline(PROMPT)) != NULL) {
 
         // Handle !n: replace the line with the n-th history command
         if (cmdline[0] == '!') {

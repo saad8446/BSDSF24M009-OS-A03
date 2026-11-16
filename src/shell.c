@@ -1,8 +1,8 @@
 #include "shell.h"
 
 // ---------- History storage ----------
-static char* history[HISTORY_SIZE];
-static int history_count = 0;
+static char* cmd_history[HISTORY_SIZE];
+static int hist_count = 0;
 
 void add_history_entry(const char* cmdline) {
     if (cmdline == NULL) return;
@@ -12,48 +12,32 @@ void add_history_entry(const char* cmdline) {
     while (*p == ' ' || *p == '\t') p++;
     if (*p == '\0') return;
 
+    // Also remember it in readline so the arrow keys can recall it
+    add_history(cmdline);
+
     // If full, drop the oldest entry and shift the rest down
-    if (history_count == HISTORY_SIZE) {
-        free(history[0]);
+    if (hist_count == HISTORY_SIZE) {
+        free(cmd_history[0]);
         for (int i = 1; i < HISTORY_SIZE; i++)
-            history[i - 1] = history[i];
-        history_count--;
+            cmd_history[i - 1] = cmd_history[i];
+        hist_count--;
     }
 
-    history[history_count++] = strdup(cmdline);
+    cmd_history[hist_count++] = strdup(cmdline);
 }
 
 void print_history(void) {
-    for (int i = 0; i < history_count; i++)
-        printf("%3d  %s\n", i + 1, history[i]);
+    for (int i = 0; i < hist_count; i++)
+        printf("%3d  %s\n", i + 1, cmd_history[i]);
 }
 
 // n is 1-based. Returns NULL if n is out of range.
 char* get_history_entry(int n) {
-    if (n < 1 || n > history_count) return NULL;
-    return history[n - 1];
+    if (n < 1 || n > hist_count) return NULL;
+    return cmd_history[n - 1];
 }
 
-// ---------- Input and parsing ----------
-char* read_cmd(char* prompt, FILE* fp) {
-    printf("%s", prompt);
-    char* cmdline = (char*) malloc(sizeof(char) * MAX_LEN);
-    int c, pos = 0;
-
-    while ((c = getc(fp)) != EOF) {
-        if (c == '\n') break;
-        cmdline[pos++] = c;
-    }
-
-    if (c == EOF && pos == 0) {
-        free(cmdline);
-        return NULL; // Handle Ctrl+D
-    }
-    
-    cmdline[pos] = '\0';
-    return cmdline;
-}
-
+// ---------- Parsing ----------
 char** tokenize(char* cmdline) {
     // Edge case: empty command line
     if (cmdline == NULL || cmdline[0] == '\0' || cmdline[0] == '\n') {
@@ -81,6 +65,7 @@ char** tokenize(char* cmdline) {
         while (*++cp != '\0' && !(*cp == ' ' || *cp == '\t')) {
             len++;
         }
+        if (len > ARGLEN - 1) len = ARGLEN - 1;   // never overflow the buffer
         strncpy(arglist[argnum], start, len);
         arglist[argnum][len] = '\0';
         argnum++;
