@@ -26,8 +26,9 @@ static void setup_redirections(command_t* cmd) {
 }
 
 // Runs every command of the pipeline, connecting them with pipes.
-// Returns the exit status of the last command.
-int execute(pipeline_t* p) {
+// Foreground: waits for all children and returns the last exit status.
+// Background: does NOT wait; records the job and returns 0 at once.
+int execute(pipeline_t* p, int background, const char* cmdtext) {
     int n = p->n_cmds;
     int fd[2];                 // the pipe being created for this stage
     int prev_fd = -1;          // read end of the previous stage's pipe
@@ -56,6 +57,14 @@ int execute(pipeline_t* p) {
             if (prev_fd != -1) {                   // read from previous pipe
                 dup2(prev_fd, STDIN_FILENO);
                 close(prev_fd);
+            } else if (background && p->cmds[0].infile == NULL) {
+                // A background job must not read the keyboard (the shell
+                // needs it), so give it an empty input instead.
+                int null_fd = open("/dev/null", O_RDONLY);
+                if (null_fd >= 0) {
+                    dup2(null_fd, STDIN_FILENO);
+                    close(null_fd);
+                }
             }
             if (!is_last) {                        // write into the next pipe
                 dup2(fd[1], STDOUT_FILENO);
@@ -87,7 +96,14 @@ int execute(pipeline_t* p) {
 
     if (prev_fd != -1) close(prev_fd);             // cleanup if we broke out early
 
-    // Wait for every child so none become zombies
+    // Background: do not wait. Remember the job and return to the prompt.
+    if (background) {
+        if (launched > 0)
+            add_job(pids[launched - 1], cmdtext);
+        return 0;
+    }
+
+    // Foreground: wait for every child so none become zombies
     int status = 0, last_status = 0;
     for (int i = 0; i < launched; i++) {
         waitpid(pids[i], &status, 0);

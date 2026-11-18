@@ -41,6 +41,76 @@ char* get_history_entry(int n) {
 static int is_space(char c) { return c == ' ' || c == '\t'; }
 static int is_op(char c)    { return c == '|' || c == '<' || c == '>'; }
 
+void free_segments(segment_t segs[], int n) {
+    for (int i = 0; i < n; i++)
+        free(segs[i].text);
+}
+
+// Splits a line at ';' and '&' (ignoring any inside quotes).
+// A segment ended by '&' is marked as a background command.
+// Returns the number of segments, or -1 on a syntax error
+// (the message is already printed).
+int split_line(const char* line, segment_t segs[], int max) {
+    int n = 0;
+    const char* start = line;
+    char quote = 0;
+
+    for (const char* cp = line; ; cp++) {
+        char c = *cp;
+        int at_end = (c == '\0');
+        int bg = 0;
+
+        if (!at_end) {
+            if (quote) {                         // inside quotes: no splitting
+                if (c == quote) quote = 0;
+                continue;
+            }
+            if (c == '"' || c == '\'') { quote = c; continue; }
+
+            if (c == '&') {
+                if (cp[1] == '&') {
+                    fprintf(stderr, "syntax error: '&&' is not supported\n");
+                    goto error;
+                }
+                bg = 1;
+            } else if (c != ';') {
+                continue;                        // ordinary character
+            }
+        }
+
+        // The segment is [start, cp). Trim spaces at both ends.
+        const char* s = start;
+        const char* e = cp;
+        while (s < e && is_space(*s)) s++;
+        while (e > s && is_space(e[-1])) e--;
+        size_t len = (size_t)(e - s);
+
+        if (len == 0) {
+            if (bg) {
+                fprintf(stderr, "syntax error: missing command before '&'\n");
+                goto error;
+            }
+            // empty piece (e.g. a trailing ';') -- just skip it
+        } else {
+            if (n == max) {
+                fprintf(stderr, "error: too many commands on one line (max %d)\n", max);
+                goto error;
+            }
+            segs[n].text = strndup(s, len);
+            segs[n].background = bg;
+            n++;
+        }
+
+        if (at_end) break;
+        start = cp + 1;
+    }
+    return n;
+
+error:
+    free_segments(segs, n);
+    return -1;
+}
+
 // Reads one word starting at *pp. Stops at whitespace or an operator
 // (unless inside quotes). Quote characters are removed from the result.
 // Advances *pp past the word. Returns NULL on an unterminated quote.
@@ -178,15 +248,19 @@ int handle_builtin(char** arglist) {
         printf("  exit        Exit the shell\n");
         printf("  cd <dir>    Change the current directory\n");
         printf("  help        Show this help message\n");
-        printf("  jobs        List background jobs (not yet implemented)\n");
+        printf("  jobs        List running background jobs\n");
         printf("  history     Show the last %d commands\n", HISTORY_SIZE);
         printf("  !n          Re-run command number n from history\n");
-        printf("Operators: cmd < file, cmd > file, cmd1 | cmd2\n");
+        printf("Operators:\n");
+        printf("  cmd < file, cmd > file   Redirect input / output\n");
+        printf("  cmd1 | cmd2              Pipe\n");
+        printf("  cmd1 ; cmd2              Run one after another\n");
+        printf("  cmd &                    Run in the background\n");
         return 1;
     }
 
     if (strcmp(arglist[0], "jobs") == 0) {
-        printf("Job control not yet implemented.\n");
+        print_jobs();
         return 1;
     }
 

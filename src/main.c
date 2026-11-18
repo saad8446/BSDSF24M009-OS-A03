@@ -1,10 +1,44 @@
 #include "shell.h"
 
+// Splits one input line at ';' and '&', then runs each piece in order.
+static void run_line(const char* line) {
+    segment_t segs[MAX_SEGMENTS];
+    int n = split_line(line, segs, MAX_SEGMENTS);
+    if (n < 0) return;                       // syntax error already reported
+
+    for (int i = 0; i < n; i++) {
+        pipeline_t pipeline;
+        int rc = parse_pipeline(segs[i].text, &pipeline);
+
+        if (rc < 0) break;                   // syntax error: stop the chain
+        if (rc > 0) continue;                // empty piece
+
+        command_t* first = &pipeline.cmds[0];
+
+        // A single plain foreground command (no pipe, no redirection) may be
+        // a built-in that must run inside the shell process itself.
+        int plain = (pipeline.n_cmds == 1 && !first->infile && !first->outfile);
+
+        if (!(plain && !segs[i].background && handle_builtin(first->argv)))
+            execute(&pipeline, segs[i].background, segs[i].text);
+
+        free_pipeline(&pipeline);
+    }
+
+    free_segments(segs, n);
+}
+
 int main() {
     char* cmdline;
-    pipeline_t pipeline;
 
-    while ((cmdline = readline(PROMPT)) != NULL) {
+    while (1) {
+        reap_jobs();                         // collect finished background jobs
+                                             // BEFORE showing the prompt
+
+        cmdline = readline(PROMPT);
+        if (cmdline == NULL) break;          // Ctrl+D
+
+        reap_jobs();                         // jobs that finished while typing
 
         // Handle !n: replace the line with the n-th history command
         if (cmdline[0] == '!') {
@@ -30,21 +64,7 @@ int main() {
         }
 
         add_history_entry(cmdline);
-
-        // 0 = parsed OK, 1 = empty line, -1 = syntax error (already reported)
-        if (parse_pipeline(cmdline, &pipeline) == 0) {
-            command_t* first = &pipeline.cmds[0];
-
-            // A single plain command (no pipe, no redirection) may be a
-            // built-in that must run inside the shell process itself.
-            int plain = (pipeline.n_cmds == 1 && !first->infile && !first->outfile);
-
-            if (!(plain && handle_builtin(first->argv)))
-                execute(&pipeline);
-
-            free_pipeline(&pipeline);
-        }
-
+        run_line(cmdline);
         free(cmdline);
     }
 

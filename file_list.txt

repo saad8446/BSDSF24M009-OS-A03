@@ -1,9 +1,0 @@
-total 24
--rw-r--r-- 1 muhammad_saad muhammad_saad  383 Nov 16 19:09 Makefile
--rw-r--r-- 1 muhammad_saad muhammad_saad   20 Nov 16 18:10 README.md
-drwxr-xr-x 2 muhammad_saad muhammad_saad 4096 Nov 18 17:22 bin
--rw-r--r-- 1 muhammad_saad muhammad_saad    0 Nov 18 17:26 file_list.txt
-
-drwxr-xr-x 2 muhammad_saad muhammad_saad 4096 Nov 16 19:09 include
-drwxr-xr-x 2 muhammad_saad muhammad_saad 4096 Nov 18 17:22 obj
-drwxr-xr-x 2 muhammad_saad muhammad_saad 4096 Nov 16 19:09 src

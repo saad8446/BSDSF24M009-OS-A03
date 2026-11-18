@@ -14,6 +14,8 @@
 #define MAX_LEN 512
 #define MAXARGS 10
 #define MAX_CMDS 10
+#define MAX_SEGMENTS 32
+#define MAX_JOBS 32
 #define PROMPT "FCIT> "
 #define HISTORY_SIZE 20
 
@@ -31,12 +33,20 @@ typedef struct {
     int       n_cmds;
 } pipeline_t;
 
+// One piece of a line that was split at ';' or '&'
+typedef struct {
+    char* text;        // the command text (trimmed)
+    int   background;  // 1 if it was terminated by '&'
+} segment_t;
+
 // Parsing (shell.c)
+int  split_line(const char* line, segment_t segs[], int max);
+void free_segments(segment_t segs[], int n);
 int  parse_pipeline(const char* line, pipeline_t* p);
 void free_pipeline(pipeline_t* p);
 
 // Execution (execute.c)
-int execute(pipeline_t* p);
+int execute(pipeline_t* p, int background, const char* cmdtext);
 
 // Built-ins (shell.c)
 int handle_builtin(char** arglist);
@@ -45,5 +55,10 @@ int handle_builtin(char** arglist);
 void add_history_entry(const char* cmdline);
 void print_history(void);
 char* get_history_entry(int n);
+
+// Background jobs (jobs.c)
+void add_job(pid_t pid, const char* cmdtext);
+void reap_jobs(void);
+void print_jobs(void);
 
 #endif // SHELL_H
