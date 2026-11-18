@@ -7,25 +7,39 @@ int run_line(const char* line) {
     int status = 0;
 
     int n = split_line(line, segs, MAX_SEGMENTS);
-    if (n < 0) return 1;                     // syntax error already reported
+    if (n < 0) {                             // syntax error already reported
+        last_exit_status = 1;
+        return 1;
+    }
 
     for (int i = 0; i < n; i++) {
         pipeline_t pipeline;
         int rc = parse_pipeline(segs[i].text, &pipeline);
 
-        if (rc < 0) { status = 1; break; }   // syntax error: stop the chain
+        if (rc < 0) {                        // syntax error: stop the chain
+            status = 1;
+            last_exit_status = 1;
+            break;
+        }
         if (rc > 0) continue;                // empty piece
+
+        // Replace $NAME and $? by their values BEFORE running anything,
+        // so built-ins and external commands both get the real text.
+        expand_pipeline(&pipeline);
 
         command_t* first = &pipeline.cmds[0];
 
         // A single plain foreground command (no pipe, no redirection) may be
-        // a built-in that must run inside the shell process itself.
+        // a built-in (or a variable assignment) that must run inside the
+        // shell process itself.
         int plain = (pipeline.n_cmds == 1 && !first->infile && !first->outfile);
 
         if (plain && !segs[i].background && handle_builtin(first->argv))
             status = last_exit_status;       // built-in: status set by itself
         else
             status = execute(&pipeline, segs[i].background, segs[i].text);
+
+        last_exit_status = status;           // remembered for $?
 
         free_pipeline(&pipeline);
     }

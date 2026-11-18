@@ -40,7 +40,7 @@ typedef struct {
     int   background;  // 1 if it was terminated by '&'
 } segment_t;
 
-// Exit status of the most recent built-in (0 = success)
+// Exit status of the most recent command (0 = success); also read by $?
 extern int last_exit_status;
 
 // Parsing (shell.c)
@@ -73,5 +73,13 @@ void print_jobs(void);
 int  starts_with_word(const char* line, const char* word);
 int  is_blank_or_comment(const char* line);
 void run_if_statement(const char* first_line);
+
+// Shell variables (variables.c)
+void        set_var(const char* name, const char* value);
+const char* get_var(const char* name);
+void        print_vars(void);
+int         is_assignment(const char* word);
+void        assign_word(const char* word);
+void        expand_pipeline(pipeline_t* p);
 
 #endif // SHELL_H

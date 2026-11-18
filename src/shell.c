@@ -1,6 +1,6 @@
 #include "shell.h"
 
-// Exit status of the most recent built-in command
+// Exit status of the most recent command
 int last_exit_status = 0;
 
 // ---------- History storage ----------
@@ -233,6 +233,22 @@ int handle_builtin(char** arglist) {
     if (arglist == NULL || arglist[0] == NULL)
         return 0;
 
+    // Variable assignment: NAME=value (handled inside the shell, no fork)
+    if (is_assignment(arglist[0])) {
+        for (int i = 0; arglist[i] != NULL; i++) {
+            if (!is_assignment(arglist[i])) {
+                fprintf(stderr, "error: only plain NAME=value assignments are supported "
+                                "(a command after an assignment is not)\n");
+                last_exit_status = 1;
+                return 1;
+            }
+        }
+        for (int i = 0; arglist[i] != NULL; i++)
+            assign_word(arglist[i]);
+        last_exit_status = 0;
+        return 1;
+    }
+
     if (strcmp(arglist[0], "exit") == 0) {
         printf("Shell exited.\n");
         exit(0);
@@ -258,6 +274,10 @@ int handle_builtin(char** arglist) {
         printf("  jobs        List running background jobs\n");
         printf("  history     Show the last %d commands\n", HISTORY_SIZE);
         printf("  !n          Re-run command number n from history\n");
+        printf("  set         Show all shell variables\n");
+        printf("Variables:\n");
+        printf("  NAME=value  Create or change a variable (no spaces around =)\n");
+        printf("  $NAME       Use a variable's value; $? is the last exit status\n");
         printf("Operators:\n");
         printf("  cmd < file, cmd > file   Redirect input / output\n");
         printf("  cmd1 | cmd2              Pipe\n");
@@ -282,6 +302,12 @@ int handle_builtin(char** arglist) {
 
     if (strcmp(arglist[0], "history") == 0) {
         print_history();
+        last_exit_status = 0;
+        return 1;
+    }
+
+    if (strcmp(arglist[0], "set") == 0) {
+        print_vars();
         last_exit_status = 0;
         return 1;
     }
