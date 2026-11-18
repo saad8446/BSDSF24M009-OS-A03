@@ -38,47 +38,119 @@ char* get_history_entry(int n) {
 }
 
 // ---------- Parsing ----------
-char** tokenize(char* cmdline) {
-    // Edge case: empty command line
-    if (cmdline == NULL || cmdline[0] == '\0' || cmdline[0] == '\n') {
-        return NULL;
-    }
+static int is_space(char c) { return c == ' ' || c == '\t'; }
+static int is_op(char c)    { return c == '|' || c == '<' || c == '>'; }
 
-    char** arglist = (char**)malloc(sizeof(char*) * (MAXARGS + 1));
-    for (int i = 0; i < MAXARGS + 1; i++) {
-        arglist[i] = (char*)malloc(sizeof(char) * ARGLEN);
-        bzero(arglist[i], ARGLEN);
-    }
+// Reads one word starting at *pp. Stops at whitespace or an operator
+// (unless inside quotes). Quote characters are removed from the result.
+// Advances *pp past the word. Returns NULL on an unterminated quote.
+static char* read_word(const char** pp) {
+    const char* cp = *pp;
+    char* buf = malloc(strlen(cp) + 1);
+    size_t len = 0;
+    char quote = 0;
 
-    char* cp = cmdline;
-    char* start;
-    int len;
-    int argnum = 0;
-
-    while (*cp != '\0' && argnum < MAXARGS) {
-        while (*cp == ' ' || *cp == '\t') cp++; // Skip leading whitespace
-        
-        if (*cp == '\0') break; // Line was only whitespace
-
-        start = cp;
-        len = 1;
-        while (*++cp != '\0' && !(*cp == ' ' || *cp == '\t')) {
-            len++;
+    while (*cp != '\0') {
+        if (quote) {
+            if (*cp == quote) quote = 0;       // closing quote
+            else buf[len++] = *cp;
+        } else if (*cp == '"' || *cp == '\'') {
+            quote = *cp;                       // opening quote
+        } else if (is_space(*cp) || is_op(*cp)) {
+            break;                             // end of word
+        } else {
+            buf[len++] = *cp;
         }
-        if (len > ARGLEN - 1) len = ARGLEN - 1;   // never overflow the buffer
-        strncpy(arglist[argnum], start, len);
-        arglist[argnum][len] = '\0';
-        argnum++;
+        cp++;
     }
 
-    if (argnum == 0) { // No arguments were parsed
-        for(int i = 0; i < MAXARGS + 1; i++) free(arglist[i]);
-        free(arglist);
+    *pp = cp;
+    if (quote) {                               // quote never closed
+        free(buf);
         return NULL;
     }
+    buf[len] = '\0';
+    return buf;
+}
 
-    arglist[argnum] = NULL;
-    return arglist;
+void free_pipeline(pipeline_t* p) {
+    for (int i = 0; i < p->n_cmds; i++) {
+        for (int j = 0; j < p->cmds[i].argc; j++)
+            free(p->cmds[i].argv[j]);
+        free(p->cmds[i].infile);
+        free(p->cmds[i].outfile);
+    }
+    p->n_cmds = 0;
+}
+
+// Returns 0 on success, 1 for an empty line, -1 on a syntax error
+// (the error message is already printed).
+int parse_pipeline(const char* line, pipeline_t* p) {
+    memset(p, 0, sizeof(*p));
+    p->n_cmds = 1;
+    command_t* cur = &p->cmds[0];
+    const char* cp = line;
+
+    while (*cp != '\0') {
+        while (is_space(*cp)) cp++;
+        if (*cp == '\0') break;
+
+        if (*cp == '|') {
+            if (cur->argc == 0) {
+                fprintf(stderr, "syntax error: missing command before '|'\n");
+                goto error;
+            }
+            if (p->n_cmds == MAX_CMDS) {
+                fprintf(stderr, "error: too many commands in pipeline (max %d)\n", MAX_CMDS);
+                goto error;
+            }
+            cp++;
+            cur = &p->cmds[p->n_cmds++];
+        }
+        else if (*cp == '<' || *cp == '>') {
+            char op = *cp++;
+            while (is_space(*cp)) cp++;
+            if (*cp == '\0' || is_op(*cp)) {
+                fprintf(stderr, "syntax error: expected a filename after '%c'\n", op);
+                goto error;
+            }
+            char* name = read_word(&cp);
+            if (name == NULL) {
+                fprintf(stderr, "syntax error: unterminated quote\n");
+                goto error;
+            }
+            if (op == '<') { free(cur->infile);  cur->infile  = name; }
+            else           { free(cur->outfile); cur->outfile = name; }
+        }
+        else {
+            if (cur->argc >= MAXARGS) {
+                fprintf(stderr, "error: too many arguments (max %d)\n", MAXARGS);
+                goto error;
+            }
+            char* word = read_word(&cp);
+            if (word == NULL) {
+                fprintf(stderr, "syntax error: unterminated quote\n");
+                goto error;
+            }
+            cur->argv[cur->argc++] = word;
+        }
+    }
+
+    // Completely empty line
+    if (p->n_cmds == 1 && cur->argc == 0 && !cur->infile && !cur->outfile)
+        return 1;
+
+    // Line ended with '|' or had only redirections and no command
+    if (cur->argc == 0) {
+        fprintf(stderr, "syntax error: missing command\n");
+        goto error;
+    }
+
+    return 0;
+
+error:
+    free_pipeline(p);
+    return -1;
 }
 
 // ---------- Built-ins ----------
@@ -109,6 +181,7 @@ int handle_builtin(char** arglist) {
         printf("  jobs        List background jobs (not yet implemented)\n");
         printf("  history     Show the last %d commands\n", HISTORY_SIZE);
         printf("  !n          Re-run command number n from history\n");
+        printf("Operators: cmd < file, cmd > file, cmd1 | cmd2\n");
         return 1;
     }
 

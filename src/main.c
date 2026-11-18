@@ -2,7 +2,7 @@
 
 int main() {
     char* cmdline;
-    char** arglist;
+    pipeline_t pipeline;
 
     while ((cmdline = readline(PROMPT)) != NULL) {
 
@@ -31,16 +31,20 @@ int main() {
 
         add_history_entry(cmdline);
 
-        if ((arglist = tokenize(cmdline)) != NULL) {
-            if (handle_builtin(arglist) == 0)
-                execute(arglist);
+        // 0 = parsed OK, 1 = empty line, -1 = syntax error (already reported)
+        if (parse_pipeline(cmdline, &pipeline) == 0) {
+            command_t* first = &pipeline.cmds[0];
 
-            // Free the memory allocated by tokenize()
-            for (int i = 0; arglist[i] != NULL; i++) {
-                free(arglist[i]);
-            }
-            free(arglist);
+            // A single plain command (no pipe, no redirection) may be a
+            // built-in that must run inside the shell process itself.
+            int plain = (pipeline.n_cmds == 1 && !first->infile && !first->outfile);
+
+            if (!(plain && handle_builtin(first->argv)))
+                execute(&pipeline);
+
+            free_pipeline(&pipeline);
         }
+
         free(cmdline);
     }
 
