@@ -1,5 +1,8 @@
 #include "shell.h"
 
+// Exit status of the most recent built-in command
+int last_exit_status = 0;
+
 // ---------- History storage ----------
 static char* cmd_history[HISTORY_SIZE];
 static int hist_count = 0;
@@ -224,7 +227,8 @@ error:
 }
 
 // ---------- Built-ins ----------
-// Returns 1 if the command was a built-in (already handled), 0 otherwise
+// Returns 1 if the command was a built-in (already handled), 0 otherwise.
+// A built-in stores its exit status in last_exit_status.
 int handle_builtin(char** arglist) {
     if (arglist == NULL || arglist[0] == NULL)
         return 0;
@@ -235,10 +239,13 @@ int handle_builtin(char** arglist) {
     }
 
     if (strcmp(arglist[0], "cd") == 0) {
+        last_exit_status = 0;
         if (arglist[1] == NULL) {
             fprintf(stderr, "cd: missing directory\n");
+            last_exit_status = 1;
         } else if (chdir(arglist[1]) != 0) {
             perror("cd");
+            last_exit_status = 1;
         }
         return 1;
     }
@@ -256,16 +263,26 @@ int handle_builtin(char** arglist) {
         printf("  cmd1 | cmd2              Pipe\n");
         printf("  cmd1 ; cmd2              Run one after another\n");
         printf("  cmd &                    Run in the background\n");
+        printf("Control structure (then/else/fi each on its own line):\n");
+        printf("  if <command>\n");
+        printf("  then\n");
+        printf("    <commands>\n");
+        printf("  else\n");
+        printf("    <commands>\n");
+        printf("  fi\n");
+        last_exit_status = 0;
         return 1;
     }
 
     if (strcmp(arglist[0], "jobs") == 0) {
         print_jobs();
+        last_exit_status = 0;
         return 1;
     }
 
     if (strcmp(arglist[0], "history") == 0) {
         print_history();
+        last_exit_status = 0;
         return 1;
     }
 

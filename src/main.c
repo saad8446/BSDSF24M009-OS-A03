@@ -1,16 +1,19 @@
 #include "shell.h"
 
 // Splits one input line at ';' and '&', then runs each piece in order.
-static void run_line(const char* line) {
+// Returns the exit status of the last command that ran.
+int run_line(const char* line) {
     segment_t segs[MAX_SEGMENTS];
+    int status = 0;
+
     int n = split_line(line, segs, MAX_SEGMENTS);
-    if (n < 0) return;                       // syntax error already reported
+    if (n < 0) return 1;                     // syntax error already reported
 
     for (int i = 0; i < n; i++) {
         pipeline_t pipeline;
         int rc = parse_pipeline(segs[i].text, &pipeline);
 
-        if (rc < 0) break;                   // syntax error: stop the chain
+        if (rc < 0) { status = 1; break; }   // syntax error: stop the chain
         if (rc > 0) continue;                // empty piece
 
         command_t* first = &pipeline.cmds[0];
@@ -19,17 +22,23 @@ static void run_line(const char* line) {
         // a built-in that must run inside the shell process itself.
         int plain = (pipeline.n_cmds == 1 && !first->infile && !first->outfile);
 
-        if (!(plain && !segs[i].background && handle_builtin(first->argv)))
-            execute(&pipeline, segs[i].background, segs[i].text);
+        if (plain && !segs[i].background && handle_builtin(first->argv))
+            status = last_exit_status;       // built-in: status set by itself
+        else
+            status = execute(&pipeline, segs[i].background, segs[i].text);
 
         free_pipeline(&pipeline);
     }
 
     free_segments(segs, n);
+    return status;
 }
 
 int main() {
     char* cmdline;
+
+    // Pasted multi-line text should behave like typing line by line
+    rl_variable_bind("enable-bracketed-paste", "off");
 
     while (1) {
         reap_jobs();                         // collect finished background jobs
@@ -64,7 +73,22 @@ int main() {
         }
 
         add_history_entry(cmdline);
-        run_line(cmdline);
+
+        if (is_blank_or_comment(cmdline)) {
+            // nothing to do
+        }
+        else if (starts_with_word(cmdline, "if")) {
+            run_if_statement(cmdline);       // multi-line if ... fi
+        }
+        else if (starts_with_word(cmdline, "then") ||
+                 starts_with_word(cmdline, "else") ||
+                 starts_with_word(cmdline, "fi")) {
+            fprintf(stderr, "syntax error: unexpected keyword (no matching 'if')\n");
+        }
+        else {
+            run_line(cmdline);
+        }
+
         free(cmdline);
     }
 

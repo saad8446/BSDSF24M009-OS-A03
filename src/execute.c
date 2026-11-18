@@ -76,11 +76,11 @@ int execute(pipeline_t* p, int background, const char* cmdtext) {
 
             // A built-in inside a pipe or redirection runs here, in the child
             if (handle_builtin(p->cmds[i].argv))
-                exit(0);
+                exit(last_exit_status);            // CHANGED: real status
 
             execvp(p->cmds[i].argv[0], p->cmds[i].argv);
             perror("Command not found");           // only runs if exec failed
-            exit(1);
+            exit(127);                             // CHANGED: 127 = not found
         }
 
         // ----- PARENT -----
